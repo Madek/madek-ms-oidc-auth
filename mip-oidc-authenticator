@@ -17,7 +17,7 @@ require 'yaml'
 
 STDOUT.sync = true
 $logger = Logger.new(STDOUT)
-$logger.level = Logger::INFO
+$logger.level = Logger::DEBUG # TODO REVERT THIS WHEN DONE
 
 # DEV stuff only
 # require 'pry'
@@ -31,7 +31,7 @@ $logger.level = Logger::INFO
 options = OpenStruct.new
 # options.config_file = Pathname.new("dev/config.yml")
 OptionParser.new do |opts|
-  opts.banner = "Usage: aad-leihs-authenticator [options]"
+  opts.banner = "Usage: mip-oidc-authenticatorr [options]"
 
   opts.on("-c", "--config-file [PATH]", String, "Configuration file") do |cf|
     options.config_file = Pathname.new cf
@@ -46,10 +46,12 @@ end.parse!
 
 $config = {
   port: 3434,
+  prefix: "/ext-auth/mip-oidc",
   send_login_hint: true
 }.with_indifferent_access.deep_merge(
   YAML.load_file(options.config_file).with_indifferent_access)
 
+$logger.debug(["config", $config])
 
 ################################################################################
 ### a custom error which message will appear in the reponse ####################
@@ -57,7 +59,7 @@ $config = {
 
 class AuthenticationError < StandardError
   def initialize(msg="Unclassified Authentication Error. " \
-                 + "Please contact your leihs administrator.")
+                 + "Please contact your madek administrator.")
     super
   end
 end
@@ -85,7 +87,7 @@ class AuthenticatorApp <  Sinatra::Base
     $name = $config[:name].presence \
       || (raise 'name must be present in config')
 
-    $leihs_auth_id = $config[:leihs_auth_id].presence || $name
+    $madek_auth_id = $config[:madek_auth_id].presence || $name
 
     $client_id = $config[:client_id].presence  \
       || (raise 'client_id must be present in config')
@@ -98,9 +100,9 @@ class AuthenticatorApp <  Sinatra::Base
         $config[:public_key].presence \
         || (raise 'public_key must be present in config'))
 
-    $leihs_public_key = OpenSSL::PKey.read(
-        $config[:leihs_public_key].presence \
-        || (raise 'leihs_public_key must be present in config'))
+    $madek_public_key = OpenSSL::PKey.read(
+        $config[:madek_public_key].presence \
+        || (raise 'madek_public_key must be present in config'))
 
     $nonces = Set[]
 
@@ -120,6 +122,8 @@ class AuthenticatorApp <  Sinatra::Base
       .yield_self { |resp| JSON.parse(resp).with_indifferent_access }
       .yield_self { |res| $ms_keys = res[:keys] }
 
+    $logger.debug(["Open ID Config and MS Signing Keys loaded", 
+      {open_id_config: $open_id_config, ms_keys: $ms_keys}])
   end
 
 
@@ -145,7 +149,7 @@ class AuthenticatorApp <  Sinatra::Base
     status 403
     $logger.error "#{e} #{e.backtrace}"
     sign_in_request = JWT.decode sign_in_request_token,
-      $leihs_public_key, false, { algorithm: 'ES256' }
+      $madek_public_key, false, { algorithm: 'ES256' }
 
     <<-HTML.strip_heredoc
         <html>
@@ -181,7 +185,7 @@ class AuthenticatorApp <  Sinatra::Base
           <body>
             <h1> Unspecified Error Open-ID Authentication Service </h1>
             <p> Please try again. </p>
-            <p> Contact your leihs administrator if this problem occurs again. </p>
+            <p> Contact your madek administrator if this problem occurs again. </p>
           </body>
         </html>
     HTML
@@ -199,11 +203,11 @@ class AuthenticatorApp <  Sinatra::Base
 
       sign_in_request_token = params[:token].presence
       sign_in_request = JWT.decode sign_in_request_token,
-        $leihs_public_key, true, { algorithm: 'ES256' }
+        $madek_public_key, true, { algorithm: 'ES256' }
 
       $logger.debug({sign_in_request: sign_in_request})
 
-      email = sign_in_request.first["email"]
+      email = sign_in_request.first["email-or-login"].presence
 
       token = JWT.encode({
         sign_in_request_token: sign_in_request_token
@@ -215,6 +219,10 @@ class AuthenticatorApp <  Sinatra::Base
       $nonces.add nonce
 
       callback_url = "#{$external_base_url}/authenticators/ms-open-id/#{$name}/callback"
+
+      $logger.debug({callback_url: callback_url, $tenant => $tenant, 
+      client_id: $client_id, login_hint: $config[:send_login_hint], 
+      email: email, token: token, nonce: nonce})
 
       url = "https://login.microsoftonline.com/" + CGI::escape($tenant) \
         + '/oauth2/authorize?scope=openid&response_type=id_token&response_mode=form_post' \
@@ -242,7 +250,7 @@ class AuthenticatorApp <  Sinatra::Base
 
     token = params[:token]
 
-    token_payload = JWT.decode(token, $leihs_public_key, true, { algorithm: 'ES256' }
+    token_payload = JWT.decode(token, $madek_public_key, true, { algorithm: 'ES256' }
                         ).first.with_indifferent_access
 
     $logger.debug(['sign-out', {token_payload: token_payload}])
@@ -272,7 +280,7 @@ class AuthenticatorApp <  Sinatra::Base
 
       url = $external_base_url + \
         "/sign-out/external-authentication/" + \
-        $leihs_auth_id + "/sso-sign-out?token=" + sign_out_token
+        $madek_auth_id + "/sso-sign-out?token=" + sign_out_token
 
       redirect url
 
@@ -333,7 +341,7 @@ class AuthenticatorApp <  Sinatra::Base
       else
         raise AuthenticationError,
           "The nonce ist not known. Please try again as this can be a temporary issue. " +
-          "Contact your leihs administrator if the problem persists."
+          "Contact your madek administrator if the problem persists."
       end
 
       token_data = JWT.decode(params[:state], $public_key,
@@ -344,26 +352,33 @@ class AuthenticatorApp <  Sinatra::Base
       sign_in_request_token = token_data[:sign_in_request_token]
 
       sign_in_request = JWT.decode sign_in_request_token,
-        $leihs_public_key, true, { algorithm: 'ES256' }
+        $madek_public_key, true, { algorithm: 'ES256' }
 
 
       email = id_token_data[$config[:email_attribute]].presence
 
       unless email
         raise AuthenticationError,
-          "The required property `unique_name` resp email is missing. Contact your leihs administrator."
+          "The required property `unique_name` resp email is missing. Contact your madek administrator."
       end
 
-      unless sign_in_request[0]["email"].downcase == email.downcase
+
+      unless sign_in_request[0]["email-or-login"].downcase == email.downcase
         raise AuthenticationError,
-          "There is an account mismatch between leihs and the response from the Open-ID provider. " +
+          "There is an account mismatch between madek and the response from the Open-ID provider. " +
           "Make sure you use consistent accounts! " +
-          "Contact your leihs administrator if the problem persists."
+          "Contact your madek administrator if the problem persists."
       end
 
       token_payload = {
         sign_in_request_token: sign_in_request_token,
-        email: email.downcase,
+        'email-or-login': email.downcase,
+        account: {
+          email: email,
+          last_name: id_token_data[:family_name],
+          first_name: id_token_data[:given_name],
+          id: id_token_data[:oid]
+        },
         external_session_id: external_session_id,
         success: true}
 
@@ -372,8 +387,7 @@ class AuthenticatorApp <  Sinatra::Base
 
       token = JWT.encode(token_payload, $private_key, 'ES256')
 
-      url = sign_in_request.first["server_base_url"] \
-        + sign_in_request.first['path'] + "?token=#{token}"
+      url = sign_in_request.first["sign-in-url"] + "?token=#{token}"
 
       redirect url
 
