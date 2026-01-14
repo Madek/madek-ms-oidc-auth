@@ -15,9 +15,11 @@ require 'sinatra/base'
 require 'yaml'
 
 
+PATH_PREFIX='/ext-auth/ms-oidc'
+
 STDOUT.sync = true
 $logger = Logger.new(STDOUT)
-$logger.level = Logger::DEBUG # TODO REVERT THIS WHEN DONE
+$logger.level = Logger::Severity::INFO 
 
 # DEV stuff only
 # require 'pry'
@@ -44,9 +46,10 @@ OptionParser.new do |opts|
 
 end.parse!
 
+# http://localhost:3434/authenticators/ms-open-id/functional/sign-in?token=eyJ
+
 $config = {
   port: 3434,
-  prefix: "/ext-auth/mip-oidc",
   send_login_hint: true
 }.with_indifferent_access.deep_merge(
   YAML.load_file(options.config_file).with_indifferent_access)
@@ -138,7 +141,7 @@ class AuthenticatorApp <  Sinatra::Base
 
   ### just for pinging this service ############################################
 
-  get '/authenticators/ms-open-id/:name/status' do
+  get "#{PATH_PREFIX}/:name/status" do
     'OK'
   end
 
@@ -195,7 +198,7 @@ class AuthenticatorApp <  Sinatra::Base
   ### sign-in ##################################################################
 
 
-  get '/authenticators/ms-open-id/:name/sign-in' do
+  get "#{PATH_PREFIX}/:name/sign-in" do
 
     $logger.info(['sign-in', params])
 
@@ -205,7 +208,7 @@ class AuthenticatorApp <  Sinatra::Base
       sign_in_request = JWT.decode sign_in_request_token,
         $madek_public_key, true, { algorithm: 'ES256' }
 
-      $logger.debug({sign_in_request: sign_in_request})
+      $logger.info({sign_in_request: sign_in_request})
 
       email = sign_in_request.first["email-or-login"].presence
 
@@ -218,7 +221,7 @@ class AuthenticatorApp <  Sinatra::Base
       nonce = SecureRandom.uuid
       $nonces.add nonce
 
-      callback_url = "#{$external_base_url}/authenticators/ms-open-id/#{$name}/callback"
+      callback_url = "#{$external_base_url}#{PATH_PREFIX}/#{$name}/callback"
 
       $logger.debug({callback_url: callback_url, $tenant => $tenant, 
       client_id: $client_id, login_hint: $config[:send_login_hint], 
@@ -244,7 +247,7 @@ class AuthenticatorApp <  Sinatra::Base
 
   ### sign-out ##################################################################
 
-  get '/authenticators/ms-open-id/:name/sign-out' do
+  get "#{PATH_PREFIX}/:name/sign-out" do
 
     $logger.info(['sign-out', {params: params}])
 
@@ -267,7 +270,7 @@ class AuthenticatorApp <  Sinatra::Base
 
   ### single sign out ###########################################################
 
-  get '/authenticators/ms-open-id/:name/sso-sign-out' do
+  get "#{PATH_PREFIX}/:name/sso-sign-out" do
 
     begin
 
@@ -321,7 +324,7 @@ class AuthenticatorApp <  Sinatra::Base
 
 
 
-  post '/authenticators/ms-open-id/:name/callback' do
+  post "#{PATH_PREFIX}/:name/callback" do
 
     $logger.debug(['callback', params])
 
@@ -370,24 +373,36 @@ class AuthenticatorApp <  Sinatra::Base
           "Contact your madek administrator if the problem persists."
       end
 
+      $logger.debug(["callback", {id_token_data: id_token_data}])
+
+
+      account = {
+        email: email,
+        last_name: id_token_data[:family_name],
+        first_name: id_token_data[:given_name],
+        id: id_token_data[$config[:institutional_id_attribute]].presence
+      }
+      
+
       token_payload = {
         sign_in_request_token: sign_in_request_token,
         'email-or-login': email.downcase,
-        account: {
-          email: email,
-          last_name: id_token_data[:family_name],
-          first_name: id_token_data[:given_name],
-          id: id_token_data[:oid]
-        },
+        account: account,
         external_session_id: external_session_id,
         success: true}
 
-      $logger.debug(["callback", {token_payload: token_payload}])
 
+      if token_payload[:account][:id].blank?
+        raise AuthenticationError,
+          "The required property mapping to the institutional id is missing or no not properly configured. " +
+          "Contact your madek administrator."
+      end
 
       token = JWT.encode(token_payload, $private_key, 'ES256')
 
       url = sign_in_request.first["sign-in-url"] + "?token=#{token}"
+
+      $logger.info(['callback', 'success: ', account])
 
       redirect url
 

@@ -23,7 +23,7 @@
     owner: '{{app_user}}'
     mode: 'preserve'
   with_items:
-    - aad-leihs-authenticator
+    - ms-oidc-authenticator
     - Gemfile
     - Gemfile.lock
     - .tool-versions

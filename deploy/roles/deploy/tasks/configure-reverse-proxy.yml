@@ -1,0 +1,12 @@
+- name: copy reverse proxy config
+  template:
+    src: 'apache.conf'
+    dest: '/etc/apache2/madek/conf.d/madek_500_{{app_name}}.conf'
+    mode: '0644'
+    owner: root
+    group: root
+
+- name: reload apache2
+  service:
+    name: apache2
+    state: reloaded

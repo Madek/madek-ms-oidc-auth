@@ -1,9 +1,6 @@
-app_name: 'leihs-{{leihs_auth_name}}-auth'
-app_dir: /{{app_name}}
-app_user: '{{app_name}}'
-config_file: '{{inventory_dir}}/config/{{leihs_auth_name}}_aad-oidc-config.yml'
-asdf_user: '{{app_user}}'
-asdf_version: 0.10.2
-asdf_root_dir: /home/{{asdf_user}}/.asdf
-asdf_dir: "{{asdf_root_dir}}/asdf-{{asdf_version}}"
-ruby_dir: "/home/{{app_user}}/.asdf/installs/ruby/{{ruby_version.stdout}}"
+app_port: 3434
+app_user: 'madek-{{madek_auth_name}}-ms-oidc-auth'
+app_name: 'madek-{{madek_auth_name}}-ms-oidc-auth'
+app_dir: '/{{app_name}}'
+config_file: '{{inventory_dir}}/config/{{madek_auth_name}}_ms-oidc-auth_config.yml'
+configure_reverse_proxy: true

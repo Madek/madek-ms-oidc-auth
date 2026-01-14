@@ -14,7 +14,7 @@ Environment=APP_ENV=production
 Environment=GEM_HOME=/home/{{app_user}}/.local/share/gem
 Environment=GEM_PATH=/home/{{app_user}}/.local/share/gem
 ExecStart=/usr/bin/ruby -S \
-    bundle exec ruby aad-leihs-authenticator -c '/etc/leihs/{{app_name}}.yml'
+    bundle exec ruby ms-oidc-authenticator -c '/etc/madek/{{app_name}}.yml'
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -eou pipefail
+set -x
+
+PROJECT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+source "${PROJECT_ROOT_DIR}/bin/env/select-tool-versions-manager"
+python3 -m venv ${PROJECT_ROOT_DIR}/.venv
+source ${PROJECT_ROOT_DIR}/.venv/bin/activate
+pip install -r ${PROJECT_ROOT_DIR}/deploy/ansible-requirements.txt
+
+ansible-playbook ${PROJECT_ROOT_DIR}/deploy/deploy_play.yml "$@"
+
+
+
