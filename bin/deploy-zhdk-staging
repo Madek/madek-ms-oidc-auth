@@ -7,6 +7,6 @@ PROJECT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ${PROJECT_ROOT_DIR}/bin/deploy -vv \
     -i ../madek/deploy/inventories/zhdk/hosts.yml \
-    -l staging -e madek_auth_name='zhdk'
+    -l staging -e madek_auth_name='zhdk' "$@"
 
 

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eou pipefail
+set -x
+
+
+PROJECT_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+${PROJECT_ROOT_DIR}/bin/deploy -vv \
+    -i ../madek/deploy/inventories/zhdk/hosts.yml \
+    -e madek_auth_name='zhdk' "$@"
+
+
