@@ -42,6 +42,22 @@ confinguration below if you are maintainig this application yourself).
 
 
 
+Authorization Code Flow with PKCE (recommended)
+------------------------------------------------
+
+The service now supports the **authorization code flow with PKCE** in addition
+to the legacy implicit grant flow. The code flow is more secure and is
+recommended by Microsoft for all new deployments.
+
+To enable it, add a `client_secret` to your configuration file (see
+[Configuration](#configuration) below) and ensure the **Implicit grant / ID
+tokens** checkbox is *not* required in Entra (the code flow does not use it).
+
+If `client_secret` is **not** configured, the service falls back to the
+deprecated implicit grant flow and logs a warning at startup. Existing
+deployments continue to work without any changes.
+
+
 BREAKING Changes as of 2023-12
 ------------------------------
 
@@ -97,8 +113,12 @@ Set up Microsoft OpenID Connect
 * https://aad.portal.azure.com/
 * https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-protocols-oidc
 * create an Application
-* make sure: ID tokens (used for implicit and hybrid flows) is enabled
-* set the redirect URL to `https://{YOUR_SERVER_NAME}/authenticators/ms-open-id/{NAME}/callback`.
+* For the **authorization code flow** (recommended): enable **Allow public client flows** and
+  create a **client secret** under **Certificates & secrets**. The **ID tokens
+  (used for implicit and hybrid flows)** checkbox is not required.
+* For the legacy **implicit grant flow** (deprecated fallback): enable the
+  **ID tokens (used for implicit and hybrid flows)** checkbox.
+* Set the redirect URL to `https://{YOUR_SERVER_NAME}/authenticators/ms-open-id/{NAME}/callback`.
 
 
 ### Outgoing Single Sign-Out Notifications
@@ -145,6 +165,7 @@ external_base_url: 'https://my.leihs.app'
 name: 'functional'
 tenant: 'REPLACE with ID (domain name should work too)'
 client_id: 'REPLACE'
+client_secret: 'REPLACE'  # recommended; omit to fall back to deprecated implicit grant flow
 email_attribute: 'upn'
 
 private_key: |
