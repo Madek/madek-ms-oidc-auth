@@ -42,20 +42,65 @@ confinguration below if you are maintainig this application yourself).
 
 
 
-Authorization Code Flow with PKCE (recommended)
-------------------------------------------------
+Authentication Flows
+--------------------
 
-The service now supports the **authorization code flow with PKCE** in addition
-to the legacy implicit grant flow. The code flow is more secure and is
-recommended by Microsoft for all new deployments.
+The service supports three authentication flows, selected by configuration.
+The flow is determined at startup and logged.
 
-To enable it, add a `client_secret` to your configuration file (see
-[Configuration](#configuration) below) and ensure the **Implicit grant / ID
-tokens** checkbox is *not* required in Entra (the code flow does not use it).
+### 1. Authorization code + PKCE with client secret (recommended)
 
-If `client_secret` is **not** configured, the service falls back to the
-deprecated implicit grant flow and logs a warning at startup. Existing
-deployments continue to work without any changes.
+The strongest option for server-side deployments. The `client_secret` authenticates
+the application to Microsoft at the token exchange step, in addition to the PKCE
+`code_verifier` which proves the exchange comes from the same request that started
+the flow.
+
+Required Entra configuration:
+- Create a **client secret** under **Certificates & secrets** and note its value.
+- The **ID tokens (used for implicit and hybrid flows)** checkbox is **not** required.
+
+Required config:
+```yaml
+client_id: 'REPLACE'
+client_secret: 'REPLACE'
+```
+
+### 2. Authorization code + PKCE without client secret (public client)
+
+Uses PKCE alone, without a client secret. Recommended when a client secret cannot
+be configured (e.g. a temporary situation where the secret has expired). Only
+marginally weaker than option 1 for a server-side app, and far safer than implicit
+grant.
+
+Required Entra configuration:
+- Enable **Allow public client flows** → **Yes** under **Authentication** →
+  **Advanced settings**.
+- The **ID tokens (used for implicit and hybrid flows)** checkbox is **not** required.
+
+Required config:
+```yaml
+client_id: 'REPLACE'
+auth_flow: 'code'
+```
+
+> **Tip — emergency fallback:** Enabling **Allow public client flows** in Entra even
+> while using a `client_secret` costs nothing and gives you a quick fallback path:
+> if the secret expires unexpectedly, setting `auth_flow: code` and removing
+> `client_secret` from config restores logins immediately without any Entra change.
+
+### 3. Implicit grant flow (deprecated, default fallback)
+
+The original flow. The `id_token` is delivered directly from Microsoft to the
+browser and form-posted to the callback, never exchanged via a server-side call.
+This flow is deprecated by Microsoft and the OAuth Security BCP. Existing
+deployments continue to work without any configuration change.
+
+Required Entra configuration:
+- Enable the **ID tokens (used for implicit and hybrid flows)** checkbox under
+  **Authentication** → **Implicit grant and hybrid flows**.
+
+Required config: nothing extra — this is the default when neither `client_secret`
+nor `auth_flow: code` is set.
 
 
 BREAKING Changes as of 2023-12
@@ -113,10 +158,12 @@ Set up Microsoft OpenID Connect
 * https://aad.portal.azure.com/
 * https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-protocols-oidc
 * create an Application
-* For the **authorization code flow** (recommended): enable **Allow public client flows** and
-  create a **client secret** under **Certificates & secrets**. The **ID tokens
-  (used for implicit and hybrid flows)** checkbox is not required.
-* For the legacy **implicit grant flow** (deprecated fallback): enable the
+* For the **authorization code flow with client secret** (recommended): create a
+  **client secret** under **Certificates & secrets**. The **ID tokens** checkbox is
+  not required.
+* For the **authorization code flow without client secret** (public client): enable
+  **Allow public client flows** → **Yes**. The **ID tokens** checkbox is not required.
+* For the legacy **implicit grant flow** (deprecated, default fallback): enable the
   **ID tokens (used for implicit and hybrid flows)** checkbox.
 * Set the redirect URL to `https://{YOUR_SERVER_NAME}/authenticators/ms-open-id/{NAME}/callback`.
 
@@ -161,11 +208,25 @@ The content of the configuration file looks like the following:
 ```
 port: '3434'
 send_login_hint: true
-external_base_url: 'https://my.leihs.app'
+external_base_url: 'https://my.madek.app'
 name: 'functional'
 tenant: 'REPLACE with ID (domain name should work too)'
 client_id: 'REPLACE'
-client_secret: 'REPLACE'  # recommended; omit to fall back to deprecated implicit grant flow
+
+# Authentication flow — choose one of the three variants:
+#
+# 1. Authorization code + PKCE with client secret (recommended):
+#    client_secret: 'REPLACE'
+#
+# 2. Authorization code + PKCE without client secret (public client):
+#    auth_flow: 'code'
+#    (requires "Allow public client flows" enabled in Entra)
+#
+# 3. Implicit grant flow (deprecated, default when neither of the above is set)
+#    No extra config needed; enable "ID tokens" checkbox in Entra.
+
+client_secret: 'REPLACE'  # remove and set auth_flow: code for public client flow
+
 email_attribute: 'upn'
 
 private_key: |

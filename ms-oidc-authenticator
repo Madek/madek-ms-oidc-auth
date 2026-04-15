@@ -97,7 +97,23 @@ class AuthenticatorApp <  Sinatra::Base
       || (raise 'client_id must be present in config')
 
     $client_secret = $config[:client_secret].presence
-    $logger.warn('client_secret not configured — using deprecated implicit grant flow') unless $client_secret
+
+    $auth_flow = if $client_secret
+      :confidential_code
+    elsif $config[:auth_flow].presence == 'code'
+      :public_code
+    else
+      :implicit
+    end
+
+    case $auth_flow
+    when :confidential_code
+      $logger.info('auth flow: authorization code + PKCE with client secret (confidential client)')
+    when :public_code
+      $logger.info('auth flow: authorization code + PKCE without client secret (public client)')
+    when :implicit
+      $logger.warn('auth flow: implicit grant (deprecated) — configure client_secret or set auth_flow: code to upgrade')
+    end
 
     $private_key = OpenSSL::PKey.read(
         $config[:private_key].presence \
@@ -221,7 +237,21 @@ class AuthenticatorApp <  Sinatra::Base
 
       callback_url = "#{$external_base_url}#{PATH_PREFIX}/#{$name}/callback"
 
-      if $client_secret
+      if $auth_flow == :implicit
+        # implicit grant flow (deprecated)
+        token = JWT.encode({
+          sign_in_request_token: sign_in_request_token
+        }, $private_key, 'ES256')
+
+        url = "https://login.microsoftonline.com/" + CGI::escape($tenant) \
+          + '/oauth2/v2.0/authorize?scope=openid&response_type=id_token&response_mode=form_post' \
+          + '&redirect_uri=' + CGI::escape(callback_url) \
+          + '&client_id=' + CGI::escape($client_id) \
+          + ($config[:send_login_hint] ? '&login_hint=' + CGI::escape(email) : '') \
+          + '&state=' + CGI::escape(token) \
+          + '&nonce=' + nonce
+      else
+        # authorization code flow with PKCE (confidential or public client)
         code_verifier = SecureRandom.urlsafe_base64(48)
         code_challenge = Base64.urlsafe_encode64(
           Digest::SHA256.digest(code_verifier), padding: false)
@@ -240,19 +270,6 @@ class AuthenticatorApp <  Sinatra::Base
           + '&nonce=' + nonce \
           + '&code_challenge=' + code_challenge \
           + '&code_challenge_method=S256'
-      else
-        # implicit grant flow (deprecated) — used when client_secret is not configured
-        token = JWT.encode({
-          sign_in_request_token: sign_in_request_token
-        }, $private_key, 'ES256')
-
-        url = "https://login.microsoftonline.com/" + CGI::escape($tenant) \
-          + '/oauth2/v2.0/authorize?scope=openid&response_type=id_token&response_mode=form_post' \
-          + '&redirect_uri=' + CGI::escape(callback_url) \
-          + '&client_id=' + CGI::escape($client_id) \
-          + ($config[:send_login_hint] ? '&login_hint=' + CGI::escape(email) : '') \
-          + '&state=' + CGI::escape(token) \
-          + '&nonce=' + nonce
       end
 
       redirect url
@@ -360,23 +377,25 @@ class AuthenticatorApp <  Sinatra::Base
 
       callback_url = "#{$external_base_url}#{PATH_PREFIX}/#{$name}/callback"
 
-      if $client_secret
+      if $auth_flow == :implicit
+        # implicit grant flow (deprecated) — id_token is returned directly by the provider
+        id_token_data = decode_id_token(params[:id_token]).first.with_indifferent_access
+      else
+        # authorization code flow with PKCE (confidential or public client)
+        token_exchange_params = {
+          grant_type: 'authorization_code',
+          code: params[:code],
+          redirect_uri: callback_url,
+          client_id: $client_id,
+          code_verifier: token_data[:code_verifier]
+        }
+        token_exchange_params[:client_secret] = $client_secret if $client_secret
         token_response = RestClient.post(
           "https://login.microsoftonline.com/#{CGI::escape($tenant)}/oauth2/v2.0/token",
-          {
-            grant_type: 'authorization_code',
-            code: params[:code],
-            redirect_uri: callback_url,
-            client_id: $client_id,
-            client_secret: $client_secret,
-            code_verifier: token_data[:code_verifier]
-          }
+          token_exchange_params
         )
         token_response_data = JSON.parse(token_response).with_indifferent_access
         id_token_data = decode_id_token(token_response_data[:id_token]).first.with_indifferent_access
-      else
-        # implicit grant flow (deprecated) — id_token is returned directly by the provider
-        id_token_data = decode_id_token(params[:id_token]).first.with_indifferent_access
       end
 
       $logger.debug(['callback', {id_token_data: id_token_data}])
