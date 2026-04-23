@@ -100,8 +100,6 @@ class AuthenticatorApp <  Sinatra::Base
 
     $auth_flow = if $client_secret
       :confidential_code
-    elsif $config[:auth_flow].presence == 'code'
-      :public_code
     else
       :implicit
     end
@@ -109,10 +107,8 @@ class AuthenticatorApp <  Sinatra::Base
     case $auth_flow
     when :confidential_code
       $logger.info('auth flow: authorization code + PKCE with client secret (confidential client)')
-    when :public_code
-      $logger.info('auth flow: authorization code + PKCE without client secret (public client)')
     when :implicit
-      $logger.warn('auth flow: implicit grant (deprecated) — configure client_secret or set auth_flow: code to upgrade')
+      $logger.warn('auth flow: implicit grant (deprecated) — configure client_secret to upgrade')
     end
 
     $private_key = OpenSSL::PKey.read(
@@ -251,7 +247,7 @@ class AuthenticatorApp <  Sinatra::Base
           + '&state=' + CGI::escape(token) \
           + '&nonce=' + nonce
       else
-        # authorization code flow with PKCE (confidential or public client)
+        # authorization code flow with PKCE (confidential client)
         code_verifier = SecureRandom.urlsafe_base64(48)
         code_challenge = Base64.urlsafe_encode64(
           Digest::SHA256.digest(code_verifier), padding: false)
@@ -381,7 +377,7 @@ class AuthenticatorApp <  Sinatra::Base
         # implicit grant flow (deprecated) — id_token is returned directly by the provider
         id_token_data = decode_id_token(params[:id_token]).first.with_indifferent_access
       else
-        # authorization code flow with PKCE (confidential or public client)
+        # authorization code flow with PKCE (confidential client)
         token_exchange_params = {
           grant_type: 'authorization_code',
           code: params[:code],
