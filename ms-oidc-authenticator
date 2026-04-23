@@ -20,7 +20,8 @@ PATH_PREFIX='/ext-auth/ms-oidc'
 
 STDOUT.sync = true
 $logger = Logger.new(STDOUT)
-$logger.level = Logger::Severity::INFO 
+$logger.level = Logger::Severity::INFO
+RestClient.log = $logger
 
 # DEV stuff only
 # require 'pry'
@@ -162,6 +163,36 @@ class AuthenticatorApp <  Sinatra::Base
   end
 
 
+  get "#{PATH_PREFIX}/:name/info" do
+    return "Switch to development mode for detailed info" if ENV['RACK_ENV'] != 'development'
+    content_type :html
+      <<-HTML.strip_heredoc
+        <html>
+        <head>
+          <title>Environment Variables</title>
+          <style>
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid black; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+          </style>
+        </head>
+        <body>
+          <h1>Environment Variables</h1>
+          <table>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+          </tr>
+          #{ENV.map { |k, v| "<tr><td>#{CGI.escapeHTML(k)}</td><td>#{CGI.escapeHTML(v)}</td></tr>" }.join("\n            ")}
+          </table>
+          <h2>Request Info</h2>
+          <pre>#{CGI.escapeHTML(request.env.map { |k, v| "#{k}: #{v}" }.join("\n"))}</pre>
+        </body>
+        </html>
+      HTML
+  end
+
+
   ### error handling and error messages ########################################
 
   def expired_response e, sign_in_request_token
@@ -224,7 +255,7 @@ class AuthenticatorApp <  Sinatra::Base
       sign_in_request = JWT.decode sign_in_request_token,
         $madek_public_key, true, { algorithm: 'ES256' }
 
-      $logger.info({sign_in_request: sign_in_request})
+      $logger.debug({sign_in_request: sign_in_request})
 
       email = sign_in_request.first["email-or-login"].presence
 
@@ -386,10 +417,17 @@ class AuthenticatorApp <  Sinatra::Base
           code_verifier: token_data[:code_verifier]
         }
         token_exchange_params[:client_secret] = $client_secret if $client_secret
-        token_response = RestClient.post(
-          "https://login.microsoftonline.com/#{CGI::escape($tenant)}/oauth2/v2.0/token",
-          token_exchange_params
-        )
+        begin
+          token_response = RestClient.post(
+            "https://login.microsoftonline.com/#{CGI::escape($tenant)}/oauth2/v2.0/token",
+            token_exchange_params
+          )
+        rescue RestClient::ExceptionWithResponse => e
+          $logger.error("Token exchange failed: #{e.response.code}")
+          $logger.error("Response headers: #{e.response.headers}")
+          $logger.error("Response body: #{e.response.body}")
+          raise
+        end
         token_response_data = JSON.parse(token_response).with_indifferent_access
         id_token_data = decode_id_token(token_response_data[:id_token]).first.with_indifferent_access
       end
@@ -412,11 +450,12 @@ class AuthenticatorApp <  Sinatra::Base
         $madek_public_key, true, { algorithm: 'ES256' }
 
 
-      email = id_token_data[$config[:email_attribute]].presence
+      email_attribute = $config[:email_attribute]
+      email = id_token_data[email_attribute].presence
 
       unless email
         raise AuthenticationError,
-          "The required property `unique_name` resp email is missing. Contact your madek administrator."
+          "The configured property for email_attribute=#{email_attribute} is missing. Contact your madek administrator."
       end
 
 
