@@ -1,0 +1,39 @@
+jobs:
+
+  checks:
+    name: Ruby linting and deploy environment
+    run_when:
+      on any branch:
+        type: branch
+        include_match: ^.*$
+    context:
+      tasks:
+
+        rubocop:
+          name: Ruby linting
+          traits:
+            mise: true
+          scripts:
+            rubocop:
+              body: |
+                #!/usr/bin/env bash
+                set -euo pipefail
+                source ./bin/env/select-tool-versions-manager
+                mise install ruby
+                bundle install
+                bundle exec rubocop
+
+        check_deploy_environment:
+          name: Check deploy environment
+          traits:
+            mise: true
+          scripts:
+            check_ansible_version:
+              body: |
+                #!/usr/bin/env bash
+                set -euo pipefail
+                python3 -m venv .venv
+                source .venv/bin/activate
+                pip install -r deploy/ansible-requirements.txt
+                ansible-playbook --version | grep -E '^ansible.playbook \[core 2\..+]' \
+                  || (echo "ansible-core 2.x is required" >&2; exit 1)

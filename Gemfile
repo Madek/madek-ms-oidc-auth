@@ -12,3 +12,6 @@ gem 'sinatra'
 gem 'rack'
 gem 'rackup'
 gem 'puma'
+
+gem 'rubocop', require: false
+gem 'rubocop-performance', require: false
