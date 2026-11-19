@@ -31,7 +31,7 @@ RestClient.log = $logger
 ### options and config #########################################################
 ################################################################################
 
-if __FILE__ == $0
+if __FILE__ == $PROGRAM_NAME
   options = OpenStruct.new
   # options.config_file = Pathname.new("dev/config.yml")
   OptionParser.new do |opts|
@@ -461,7 +461,7 @@ end
 ### start up ###################################################################
 ################################################################################
 
-if __FILE__ == $0
+if __FILE__ == $PROGRAM_NAME
   AuthenticatorApp.port = $config[:port]
   AuthenticatorApp.bind = 'localhost'
 
