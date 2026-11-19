@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 require 'active_support/all'
 require 'base64'
@@ -11,15 +12,13 @@ require 'ostruct'
 require 'pathname'
 require 'rest-client'
 require 'securerandom'
-require 'set'
 require 'sinatra/base'
 require 'yaml'
 
+PATH_PREFIX = '/ext-auth/ms-oidc'
 
-PATH_PREFIX='/ext-auth/ms-oidc'
-
-STDOUT.sync = true
-$logger = Logger.new(STDOUT)
+$stdout.sync = true
+$logger = Logger.new($stdout)
 $logger.level = Logger::Severity::INFO
 RestClient.log = $logger
 
@@ -35,58 +34,54 @@ RestClient.log = $logger
 options = OpenStruct.new
 # options.config_file = Pathname.new("dev/config.yml")
 OptionParser.new do |opts|
-  opts.banner = "Usage: mip-oidc-authenticatorr [options]"
+  opts.banner = 'Usage: mip-oidc-authenticatorr [options]'
 
-  opts.on("-c", "--config-file [PATH]", String, "Configuration file") do |cf|
+  opts.on('-c', '--config-file [PATH]', String, 'Configuration file') do |cf|
     options.config_file = Pathname.new cf
   end
 
-  opts.on("-l", "--log-level LOG_LEVEL", String,
-          "Logging level FATAL, ERROR, WARN, INFO, or DEBUG") do |ll|
+  opts.on('-l', '--log-level LOG_LEVEL', String,
+          'Logging level FATAL, ERROR, WARN, INFO, or DEBUG') do |ll|
     $logger.level = "Logger::#{ll.upcase}".constantize
   end
-
 end.parse!
 
 # http://localhost:3434/authenticators/ms-open-id/functional/sign-in?token=eyJ
 
 $config = {
   port: 3434,
-  send_login_hint: true 
+  send_login_hint: true
 }.with_indifferent_access.deep_merge(
-  YAML.load_file(options.config_file).with_indifferent_access)
+  YAML.load_file(options.config_file).with_indifferent_access
+)
 
-$logger.debug(["config", $config])
+$logger.debug(['config', $config])
 
 ################################################################################
 ### a custom error which message will appear in the reponse ####################
 ################################################################################
 
 class AuthenticationError < StandardError
-  def initialize(msg="Unclassified Authentication Error. " \
-                 + "Please contact your madek administrator.")
+  def initialize(msg = 'Unclassified Authentication Error. Please contact your madek administrator.')
     super
   end
 end
-
 
 ################################################################################
 ### the web app ################################################################
 ################################################################################
 
-class AuthenticatorApp <  Sinatra::Base
-
+class AuthenticatorApp < Sinatra::Base
   set :environment, :production
 
-  def initialize()
-
-    $email_attribute = $config[:email_attribute].presence  \
+  def initialize
+    $email_attribute = $config[:email_attribute].presence \
       || (raise 'email_attribute must be present in config')
 
-    $tenant = $config[:tenant].presence  \
+    $tenant = $config[:tenant].presence \
       || (raise 'tenant must be present in config')
 
-    $external_base_url = $config[:external_base_url].presence  \
+    $external_base_url = $config[:external_base_url].presence \
       || (raise 'external_base_url must be present in config')
 
     $name = $config[:name].presence \
@@ -94,16 +89,16 @@ class AuthenticatorApp <  Sinatra::Base
 
     $madek_auth_id = $config[:madek_auth_id].presence || $name
 
-    $client_id = $config[:client_id].presence  \
+    $client_id = $config[:client_id].presence \
       || (raise 'client_id must be present in config')
 
     $client_secret = $config[:client_secret].presence
 
     $auth_flow = if $client_secret
-      :confidential_code
-    else
-      :implicit
-    end
+                   :confidential_code
+                 else
+                   :implicit
+                 end
 
     case $auth_flow
     when :confidential_code
@@ -113,16 +108,19 @@ class AuthenticatorApp <  Sinatra::Base
     end
 
     $private_key = OpenSSL::PKey.read(
-        $config[:private_key].presence \
-        || (raise 'private_key must be present in config'))
+      $config[:private_key].presence \
+      || (raise 'private_key must be present in config')
+    )
 
     $public_key = OpenSSL::PKey.read(
-        $config[:public_key].presence \
-        || (raise 'public_key must be present in config'))
+      $config[:public_key].presence \
+      || (raise 'public_key must be present in config')
+    )
 
     $madek_public_key = OpenSSL::PKey.read(
-        $config[:madek_public_key].presence \
-        || (raise 'madek_public_key must be present in config'))
+      $config[:madek_public_key].presence \
+      || (raise 'madek_public_key must be present in config')
+    )
 
     $nonces = Set[]
 
@@ -132,29 +130,27 @@ class AuthenticatorApp <  Sinatra::Base
     # this also cleans the nonce store and prevents memory leaks
 
     $open_id_config =
-      "https://login.microsoftonline.com/#{$config[:tenant]}/v2.0/.well-known/openid-configuration" \
-      .yield_self { |config_url| RestClient.get config_url}
-      .yield_self { |resp| JSON.parse(resp).with_indifferent_access }
+      "https://login.microsoftonline.com/#{$config[:tenant]}/v2.0/.well-known/openid-configuration"
+      .then { |config_url| RestClient.get config_url }
+      .then { |resp| JSON.parse(resp).with_indifferent_access }
 
     $ms_keys = $open_id_config
-      .yield_self { |config| config[:jwks_uri] }
-      .yield_self { |jwks_uri| RestClient.get jwks_uri}
-      .yield_self { |resp| JSON.parse(resp).with_indifferent_access }
-      .yield_self { |res| $ms_keys = res[:keys] }
+               .then { |config| config[:jwks_uri] }
+               .then { |jwks_uri| RestClient.get jwks_uri }
+               .then { |resp| JSON.parse(resp).with_indifferent_access }
+               .then { |res| $ms_keys = res[:keys] }
 
-    $logger.debug(["Open ID Config and MS Signing Keys loaded", 
-      {open_id_config: $open_id_config, ms_keys: $ms_keys}])
+    $logger.debug(['Open ID Config and MS Signing Keys loaded',
+                   { open_id_config: $open_id_config, ms_keys: $ms_keys }])
   end
 
-
-#  before do
-#    binding.remote_pry
-#    $logger.debug([:before, params])
-#    if params['name'] != $name
-#      raise "The name '#{params['name']}' does not match the name from configuration '#{$name}'."
-#    end
-#  end
-
+  #  before do
+  #    binding.remote_pry
+  #    $logger.debug([:before, params])
+  #    if params['name'] != $name
+  #      raise "The name '#{params['name']}' does not match the name from configuration '#{$name}'."
+  #    end
+  #  end
 
   ### just for pinging this service ############################################
 
@@ -162,11 +158,11 @@ class AuthenticatorApp <  Sinatra::Base
     'OK'
   end
 
-
   get "#{PATH_PREFIX}/:name/info" do
-    return "Switch to development mode for detailed info" if ENV['RACK_ENV'] != 'development'
+    return 'Switch to development mode for detailed info' if ENV['RACK_ENV'] != 'development'
+
     content_type :html
-      <<-HTML.strip_heredoc
+    <<-HTML.strip_heredoc
         <html>
         <head>
           <title>Environment Variables</title>
@@ -189,17 +185,16 @@ class AuthenticatorApp <  Sinatra::Base
           <pre>#{CGI.escapeHTML(request.env.map { |k, v| "#{k}: #{v}" }.join("\n"))}</pre>
         </body>
         </html>
-      HTML
+    HTML
   end
-
 
   ### error handling and error messages ########################################
 
-  def expired_response e, sign_in_request_token
+  def expired_response(e, sign_in_request_token)
     status 403
     $logger.error "#{e} #{e.backtrace}"
     sign_in_request = JWT.decode sign_in_request_token,
-      $madek_public_key, false, { algorithm: 'ES256' }
+                                 $madek_public_key, false, { algorithm: 'ES256' }
 
     <<-HTML.strip_heredoc
         <html>
@@ -212,7 +207,7 @@ class AuthenticatorApp <  Sinatra::Base
     HTML
   end
 
-  def authentication_error_response e
+  def authentication_error_response(e)
     status 403
     $logger.error "#{e} #{e.backtrace}"
     <<-HTML.strip_heredoc
@@ -226,7 +221,7 @@ class AuthenticatorApp <  Sinatra::Base
     HTML
   end
 
-  def generic_error_response e
+  def generic_error_response(e)
     status 500
     $logger.error "#{e} #{e.backtrace}"
     <<-HTML.strip_heredoc
@@ -241,23 +236,19 @@ class AuthenticatorApp <  Sinatra::Base
     HTML
   end
 
-
   ### sign-in ##################################################################
 
-
   get "#{PATH_PREFIX}/:name/sign-in" do
-
     $logger.info(['sign-in', params])
 
     begin
-
       sign_in_request_token = params[:token].presence
       sign_in_request = JWT.decode sign_in_request_token,
-        $madek_public_key, true, { algorithm: 'ES256' }
+                                   $madek_public_key, true, { algorithm: 'ES256' }
 
-      $logger.debug({sign_in_request: sign_in_request})
+      $logger.debug({ sign_in_request: sign_in_request })
 
-      email = sign_in_request.first["email-or-login"].presence
+      email = sign_in_request.first['email-or-login'].presence
 
       nonce = SecureRandom.uuid
       $nonces.add nonce
@@ -267,140 +258,100 @@ class AuthenticatorApp <  Sinatra::Base
       if $auth_flow == :implicit
         # implicit grant flow (deprecated)
         token = JWT.encode({
-          sign_in_request_token: sign_in_request_token
-        }, $private_key, 'ES256')
+                             sign_in_request_token: sign_in_request_token
+                           }, $private_key, 'ES256')
 
-        url = "https://login.microsoftonline.com/" + CGI::escape($tenant) \
-          + '/oauth2/v2.0/authorize?scope=openid&response_type=id_token&response_mode=form_post' \
-          + '&redirect_uri=' + CGI::escape(callback_url) \
-          + '&client_id=' + CGI::escape($client_id) \
-          + ($config[:send_login_hint] ? '&login_hint=' + CGI::escape(email) : '') \
-          + '&state=' + CGI::escape(token) \
-          + '&nonce=' + nonce
+        url = "https://login.microsoftonline.com/#{CGI.escape($tenant)}/oauth2/v2.0/authorize?scope=openid&response_type=id_token&response_mode=form_post&redirect_uri=#{CGI.escape(callback_url)}&client_id=#{CGI.escape($client_id)}#{"&login_hint=#{CGI.escape(email)}" if $config[:send_login_hint]}&state=#{CGI.escape(token)}&nonce=#{nonce}"
       else
         # authorization code flow with PKCE (confidential client)
         code_verifier = SecureRandom.urlsafe_base64(48)
         code_challenge = Base64.urlsafe_encode64(
-          Digest::SHA256.digest(code_verifier), padding: false)
+          Digest::SHA256.digest(code_verifier), padding: false
+        )
 
         token = JWT.encode({
-          sign_in_request_token: sign_in_request_token,
-          code_verifier: code_verifier
-        }, $private_key, 'ES256')
+                             sign_in_request_token: sign_in_request_token,
+                             code_verifier: code_verifier
+                           }, $private_key, 'ES256')
 
-        url = "https://login.microsoftonline.com/" + CGI::escape($tenant) \
-          + '/oauth2/v2.0/authorize?scope=openid&response_type=code&response_mode=form_post' \
-          + '&redirect_uri=' + CGI::escape(callback_url) \
-          + '&client_id=' + CGI::escape($client_id) \
-          + ($config[:send_login_hint] ? '&login_hint=' + CGI::escape(email) : '') \
-          + '&state=' + CGI::escape(token) \
-          + '&nonce=' + nonce \
-          + '&code_challenge=' + code_challenge \
-          + '&code_challenge_method=S256'
+        url = "https://login.microsoftonline.com/#{CGI.escape($tenant)}/oauth2/v2.0/authorize?scope=openid&response_type=code&response_mode=form_post&redirect_uri=#{CGI.escape(callback_url)}&client_id=#{CGI.escape($client_id)}#{"&login_hint=#{CGI.escape(email)}" if $config[:send_login_hint]}&state=#{CGI.escape(token)}&nonce=#{nonce}&code_challenge=#{code_challenge}&code_challenge_method=S256"
       end
 
       redirect url
-
     rescue JWT::ExpiredSignature => e
       expired_response e, sign_in_request_token
     rescue StandardError => e
       generic_error_response e
     end
-
   end
 
   ### sign-out ##################################################################
 
   get "#{PATH_PREFIX}/:name/sign-out" do
-
-    $logger.info(['sign-out', {params: params}])
+    $logger.info(['sign-out', { params: params }])
 
     token = params[:token]
 
-    token_payload = JWT.decode(token, $madek_public_key, true, { algorithm: 'ES256' }
-                        ).first.with_indifferent_access
+    token_payload = JWT.decode(token, $madek_public_key, true, { algorithm: 'ES256' }).first.with_indifferent_access
 
-    $logger.debug(['sign-out', {token_payload: token_payload}])
+    $logger.debug(['sign-out', { token_payload: token_payload }])
 
     begin
-      redirect $open_id_config[:end_session_endpoint] \
-        + "?post_logout_redirect_uri="  \
-        + CGI::escape(token_payload[:back_to])
+      redirect "#{$open_id_config[:end_session_endpoint]}?post_logout_redirect_uri=#{CGI.escape(token_payload[:back_to])}"
     rescue StandardError => e
       generic_error_response e
     end
   end
-
 
   ### single sign out ###########################################################
 
   get "#{PATH_PREFIX}/:name/sso-sign-out" do
+    $logger.info(['sso-sign-out', { prarams: params }])
 
-    begin
+    sid = params[:sid].presence
 
-      $logger.info(['sso-sign-out', {prarams: params}])
+    sign_out_token = JWT.encode({
+                                  external_session_id: sid
+                                }, $private_key, 'ES256')
 
-      sid = params[:sid].presence
+    url = "#{$external_base_url}/sign-out/external-authentication/#{$madek_auth_id}/sso-sign-out?token=#{sign_out_token}"
 
-      sign_out_token = JWT.encode({
-        external_session_id: sid},$private_key, 'ES256')
-
-      url = $external_base_url + \
-        "/sign-out/external-authentication/" + \
-        $madek_auth_id + "/sso-sign-out?token=" + sign_out_token
-
-      redirect url
-
-    rescue StandardError => e
-
-      generic_error_response e
-
-    end
-
+    redirect url
+  rescue StandardError => e
+    generic_error_response e
   end
-
-
 
   ### callback ##################################################################
 
   def ms_signing_key(unverified_message)
+    kid = unverified_message[1]['kid']
 
-    kid = unverified_message[1]["kid"]
-
-    cert =$ms_keys.select{|k| k["kid"] == kid}.first["x5c"].first
+    cert = $ms_keys.find { |k| k['kid'] == kid }['x5c'].first
 
     OpenSSL::X509::Certificate.new(
-      "-----BEGIN CERTIFICATE-----\n" + cert +  "\n-----END CERTIFICATE-----\n"
+      "-----BEGIN CERTIFICATE-----\n#{cert}\n-----END CERTIFICATE-----\n"
     ).public_key
-
   end
 
+  def decode_id_token(id_token)
+    unverified_message = JWT.decode(id_token, nil, false)
 
-  def decode_id_token id_token
+    algorithm = unverified_message[1]['alg']
 
-      unverified_message = JWT.decode(id_token, nil, false)
-
-      algorithm = unverified_message[1]["alg"]
-
-      JWT.decode(id_token, ms_signing_key(unverified_message), true, {algorithm: algorithm})
-
+    JWT.decode(id_token, ms_signing_key(unverified_message), true, { algorithm: algorithm })
   end
-
-
 
   post "#{PATH_PREFIX}/:name/callback" do
-
     $logger.debug(['callback', params])
 
     begin
-
       external_session_id = params[:session_state].presence
-      $logger.debug(['callback', {external_session_id: external_session_id}])
+      $logger.debug(['callback', { external_session_id: external_session_id }])
 
       token_data = JWT.decode(params[:state], $public_key,
-                              true, { algorithm: 'ES256'}).first.with_indifferent_access
+                              true, { algorithm: 'ES256' }).first.with_indifferent_access
 
-      $logger.debug(['callback', {token_data: token_data}])
+      $logger.debug(['callback', { token_data: token_data }])
 
       callback_url = "#{$external_base_url}#{PATH_PREFIX}/#{$name}/callback"
 
@@ -419,7 +370,7 @@ class AuthenticatorApp <  Sinatra::Base
         token_exchange_params[:client_secret] = $client_secret if $client_secret
         begin
           token_response = RestClient.post(
-            "https://login.microsoftonline.com/#{CGI::escape($tenant)}/oauth2/v2.0/token",
+            "https://login.microsoftonline.com/#{CGI.escape($tenant)}/oauth2/v2.0/token",
             token_exchange_params
           )
         rescue RestClient::ExceptionWithResponse => e
@@ -432,7 +383,7 @@ class AuthenticatorApp <  Sinatra::Base
         id_token_data = decode_id_token(token_response_data[:id_token]).first.with_indifferent_access
       end
 
-      $logger.debug(['callback', {id_token_data: id_token_data}])
+      $logger.debug(['callback', { id_token_data: id_token_data }])
 
       nonce = id_token_data[:nonce]
 
@@ -440,34 +391,31 @@ class AuthenticatorApp <  Sinatra::Base
         $nonces.delete nonce
       else
         raise AuthenticationError,
-          "The nonce ist not known. Please try again as this can be a temporary issue. " +
-          "Contact your madek administrator if the problem persists."
+              'The nonce ist not known. Please try again as this can be a temporary issue. ' \
+              'Contact your madek administrator if the problem persists.'
       end
 
       sign_in_request_token = token_data[:sign_in_request_token]
 
       sign_in_request = JWT.decode sign_in_request_token,
-        $madek_public_key, true, { algorithm: 'ES256' }
-
+                                   $madek_public_key, true, { algorithm: 'ES256' }
 
       email_attribute = $config[:email_attribute]
       email = id_token_data[email_attribute].presence
 
       unless email
         raise AuthenticationError,
-          "The configured property for email_attribute=#{email_attribute} is missing. Contact your madek administrator."
+              "The configured property for email_attribute=#{email_attribute} is missing. Contact your madek administrator."
       end
 
-
-      unless sign_in_request[0]["email-or-login"].downcase == email.downcase
+      unless sign_in_request[0]['email-or-login'].downcase == email.downcase
         raise AuthenticationError,
-          "There is an account mismatch between madek and the response from the Open-ID provider. " +
-          "Make sure you use consistent accounts! " +
-          "Contact your madek administrator if the problem persists."
+              'There is an account mismatch between madek and the response from the Open-ID provider. ' \
+              'Make sure you use consistent accounts! ' \
+              'Contact your madek administrator if the problem persists.'
       end
 
-      $logger.debug(["callback", {id_token_data: id_token_data}])
-
+      $logger.debug(['callback', { id_token_data: id_token_data }])
 
       account = {
         email: email,
@@ -475,30 +423,28 @@ class AuthenticatorApp <  Sinatra::Base
         first_name: id_token_data[:given_name],
         id: id_token_data[$config[:institutional_id_attribute]].presence
       }
-      
 
       token_payload = {
         sign_in_request_token: sign_in_request_token,
         'email-or-login': email.downcase,
         account: account,
         external_session_id: external_session_id,
-        success: true}
-
+        success: true
+      }
 
       if token_payload[:account][:id].blank?
         raise AuthenticationError,
-          "The required property mapping to the institutional id is missing or no not properly configured. " +
-          "Contact your madek administrator."
+              'The required property mapping to the institutional id is missing or no not properly configured. ' \
+              'Contact your madek administrator.'
       end
 
       token = JWT.encode(token_payload, $private_key, 'ES256')
 
-      url = sign_in_request.first["sign-in-url"] + "?token=#{token}"
+      url = sign_in_request.first['sign-in-url'] + "?token=#{token}"
 
       $logger.info(['callback', 'success: ', account])
 
       redirect url
-
     rescue JWT::ExpiredSignature => e
       expired_response e, sign_in_request_token
     rescue AuthenticationError => e
@@ -506,12 +452,8 @@ class AuthenticatorApp <  Sinatra::Base
     rescue StandardError => e
       generic_error_response e
     end
-
   end
-
 end
-
-
 
 ################################################################################
 ### start up ###################################################################
