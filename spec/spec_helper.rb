@@ -8,7 +8,8 @@ require 'jwt'
 require 'json'
 require 'base64'
 
-include WebMock::API
+include WebMock::API # rubocop:disable Style/MixinUsage
+
 WebMock.disable_net_connect!
 
 # Generate EC key pairs for tests (prime256v1 = ES256)
@@ -17,13 +18,13 @@ TEST_MADEK_KEY  = OpenSSL::PKey::EC.generate('prime256v1')
 TEST_MS_KID     = 'test-ms-kid'
 
 # Self-signed cert so the app can verify id_tokens in tests via x5c lookup
-_cert = OpenSSL::X509::Certificate.new
-_cert.subject = _cert.issuer = OpenSSL::X509::Name.parse('/CN=test')
-_cert.not_before = Time.now - 1
-_cert.not_after  = Time.now + 86_400
-_cert.public_key = TEST_APP_KEY
-_cert.sign(TEST_APP_KEY, OpenSSL::Digest.new('SHA256'))
-TEST_MS_CERT = _cert
+cert = OpenSSL::X509::Certificate.new
+cert.subject = cert.issuer = OpenSSL::X509::Name.parse('/CN=test')
+cert.not_before = Time.now - 1
+cert.not_after  = Time.now + 86_400
+cert.public_key = TEST_APP_KEY
+cert.sign(TEST_APP_KEY, OpenSSL::Digest.new('SHA256'))
+TEST_MS_CERT = cert
 
 FAKE_OIDC_CONFIG = JSON.generate(
   issuer: 'https://login.microsoftonline.com/test-tenant/v2.0',
@@ -32,9 +33,9 @@ FAKE_OIDC_CONFIG = JSON.generate(
 )
 
 FAKE_JWKS = JSON.generate(keys: [{
-  kid: TEST_MS_KID,
-  x5c: [Base64.strict_encode64(TEST_MS_CERT.to_der)]
-}])
+                            kid: TEST_MS_KID,
+                            x5c: [Base64.strict_encode64(TEST_MS_CERT.to_der)]
+                          }])
 
 def stub_ms_endpoints
   stub_request(:get, /microsoftonline\.com.*openid-configuration/)
@@ -44,7 +45,7 @@ def stub_ms_endpoints
 end
 
 def setup_globals
-  $config = {
+  $config = { # rubocop:disable Style/GlobalVars
     port: 3434,
     send_login_hint: true,
     email_attribute: 'preferred_username',

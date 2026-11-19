@@ -5,5 +5,5 @@ AllCops:
   NewCops: enable
   SuggestExtensions: false
 
-require:
+plugins:
   - rubocop-performance
