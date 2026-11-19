@@ -17,3 +17,9 @@ gem 'sinatra'
 
 gem 'rubocop', require: false
 gem 'rubocop-performance', require: false
+
+group :test do
+  gem 'rack-test'
+  gem 'rspec'
+  gem 'webmock'
+end

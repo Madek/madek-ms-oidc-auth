@@ -31,31 +31,33 @@ RestClient.log = $logger
 ### options and config #########################################################
 ################################################################################
 
-options = OpenStruct.new
-# options.config_file = Pathname.new("dev/config.yml")
-OptionParser.new do |opts|
-  opts.banner = 'Usage: mip-oidc-authenticatorr [options]'
+if __FILE__ == $0
+  options = OpenStruct.new
+  # options.config_file = Pathname.new("dev/config.yml")
+  OptionParser.new do |opts|
+    opts.banner = 'Usage: mip-oidc-authenticatorr [options]'
 
-  opts.on('-c', '--config-file [PATH]', String, 'Configuration file') do |cf|
-    options.config_file = Pathname.new cf
-  end
+    opts.on('-c', '--config-file [PATH]', String, 'Configuration file') do |cf|
+      options.config_file = Pathname.new cf
+    end
 
-  opts.on('-l', '--log-level LOG_LEVEL', String,
-          'Logging level FATAL, ERROR, WARN, INFO, or DEBUG') do |ll|
-    $logger.level = "Logger::#{ll.upcase}".constantize
-  end
-end.parse!
+    opts.on('-l', '--log-level LOG_LEVEL', String,
+            'Logging level FATAL, ERROR, WARN, INFO, or DEBUG') do |ll|
+      $logger.level = "Logger::#{ll.upcase}".constantize
+    end
+  end.parse!
 
-# http://localhost:3434/authenticators/ms-open-id/functional/sign-in?token=eyJ
+  # http://localhost:3434/authenticators/ms-open-id/functional/sign-in?token=eyJ
 
-$config = {
-  port: 3434,
-  send_login_hint: true
-}.with_indifferent_access.deep_merge(
-  YAML.load_file(options.config_file).with_indifferent_access
-)
+  $config = {
+    port: 3434,
+    send_login_hint: true
+  }.with_indifferent_access.deep_merge(
+    YAML.load_file(options.config_file).with_indifferent_access
+  )
 
-$logger.debug(['config', $config])
+  $logger.debug(['config', $config])
+end
 
 ################################################################################
 ### a custom error which message will appear in the reponse ####################
@@ -459,7 +461,9 @@ end
 ### start up ###################################################################
 ################################################################################
 
-AuthenticatorApp.port = $config[:port]
-AuthenticatorApp.bind = 'localhost'
+if __FILE__ == $0
+  AuthenticatorApp.port = $config[:port]
+  AuthenticatorApp.bind = 'localhost'
 
-AuthenticatorApp.run!
+  AuthenticatorApp.run!
+end

@@ -1,5 +1,26 @@
 jobs:
 
+  rspec:
+    name: RSpec tests
+    run_when:
+      on any branch:
+        type: branch
+        include_match: ^.*$
+    context:
+      tasks:
+        rspec:
+          traits:
+            mise: true
+          scripts:
+            rspec:
+              body: |
+                #!/usr/bin/env bash
+                set -euo pipefail
+                source ./bin/env/select-tool-versions-manager
+                mise install ruby
+                bundle install
+                bundle exec rspec
+
   checks:
     name: Ruby linting and deploy environment
     run_when:
