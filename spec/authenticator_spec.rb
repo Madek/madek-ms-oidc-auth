@@ -92,7 +92,8 @@ RSpec.describe AuthenticatorApp do
         stub_request(:post, /microsoftonline\.com.*token/)
           .to_return(
             status: 200,
-            body: { id_token: JWT.encode(id_token_payload, TEST_APP_KEY, 'ES256') }.to_json,
+            body: JSON.generate(id_token: JWT.encode(id_token_payload, TEST_APP_KEY, 'ES256',
+                                                     { kid: TEST_MS_KID })),
             headers: { 'Content-Type' => 'application/json' }
           )
 
